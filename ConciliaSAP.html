@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConciliaSAP - Conciliação de Notas Fiscais (SAP vs Fornecedor)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="h-full bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans antialiased flex flex-col transition-colors duration-200">
+
+    <!-- Header -->
+    <header class="bg-indigo-900 dark:bg-slate-900 text-white shadow-md border-b border-indigo-800 dark:border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 dark:bg-indigo-700 p-2.5 rounded-xl text-white shadow-inner">
+                    <i class="fa-solid fa-file-invoice-dollar text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight">ConciliaSAP</h1>
+                    <p class="text-xs text-indigo-200 dark:text-slate-400">Conciliação de Notas Fiscais por CNPJ + Número da Nota (SAP vs Fornecedor)</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div id="header-status" class="hidden sm:flex items-center space-x-2 text-xs bg-indigo-800/80 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-indigo-700 dark:border-slate-700">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span class="text-indigo-200 dark:text-slate-300">Aguardando importação dos arquivos</span>
+                </div>
+                <button id="theme-toggle" class="p-2.5 rounded-xl bg-indigo-800 dark:bg-slate-800 hover:bg-indigo-700 dark:hover:bg-slate-700 text-indigo-200 dark:text-amber-400 transition-colors shadow-sm" title="Alternar Modo Claro/Escuro">
+                    <i id="theme-icon" class="fa-solid fa-moon text-sm"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <div id="toast-container" class="fixed top-5 right-5 z-[60] flex flex-col space-y-2"></div>
+
+        <!-- STEP 1: Upload -->
+        <section id="step-upload" class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
+            <div class="flex items-center justify-between pb-4 mb-6 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <span class="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold text-sm">1</span>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Importação das Planilhas</h2>
+                </div>
+                <span class="text-xs text-slate-400 dark:text-slate-500 font-medium">Formatos: .xlsx, .xls, .csv</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="flex flex-col">
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        <i class="fa-solid fa-database text-indigo-600 dark:text-indigo-400 mr-1.5"></i> Planilha SAP (o que está lançado)
+                    </label>
+                    <div id="drop-zone-sap" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer bg-slate-50 dark:bg-slate-800/50 transition-all flex flex-col items-center justify-center min-h-[160px] relative">
+                        <input type="file" id="file-sap" accept=".xlsx, .xls, .csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                        <div id="file-sap-info" class="space-y-2"></div>
+                    </div>
+                </div>
+                <div class="flex flex-col">
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        <i class="fa-solid fa-file-invoice text-emerald-600 dark:text-emerald-400 mr-1.5"></i> Planilha do Fornecedor / Extrato
+                    </label>
+                    <div id="drop-zone-sup" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer bg-slate-50 dark:bg-slate-800/50 transition-all flex flex-col items-center justify-center min-h-[160px] relative">
+                        <input type="file" id="file-sup" accept=".xlsx, .xls, .csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                        <div id="file-sup-info" class="space-y-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button id="btn-proceed-config" disabled class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:cursor-not-allowed text-white font-medium px-6 py-2.5 rounded-xl transition-all shadow-sm flex items-center space-x-2">
+                    <span>Avançar para Configuração</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </button>
+            </div>
+        </section>
+
+        <!-- STEP 2: Config -->
+        <section id="step-config" class="hidden bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 sm:p-8 space-y-6">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <span class="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold text-sm">2</span>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Chave da Nota e Campos a Conferir</h2>
+                </div>
+                <button id="btn-back-upload" class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-medium flex items-center space-x-1">
+                    <i class="fa-solid fa-arrow-left"></i><span>Trocar arquivos</span>
+                </button>
+            </div>
+
+            <!-- Chave composta -->
+            <div>
+                <h3 class="font-semibold text-slate-800 dark:text-white text-sm flex items-center space-x-2 mb-1">
+                    <i class="fa-solid fa-key text-indigo-600 dark:text-indigo-400"></i>
+                    <span>Chave composta (CNPJ + Número da Nota)</span>
+                </h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Uma nota só é considerada "a mesma" nas duas planilhas quando o CNPJ <strong>e</strong> o número da nota batem.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                        <p class="text-xs font-semibold text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-database mr-1"></i> Planilha SAP</p>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Coluna CNPJ</label>
+                            <select id="map-sap-cnpj" class="key-select w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Coluna Número da Nota Fiscal</label>
+                            <select id="map-sap-nfe" class="key-select w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white"></select>
+                        </div>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                        <p class="text-xs font-semibold text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-file-invoice mr-1"></i> Planilha do Fornecedor</p>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Coluna CNPJ</label>
+                            <select id="map-sup-cnpj" class="key-select w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Coluna Número da Nota Fiscal</label>
+                            <select id="map-sup-nfe" class="key-select w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white"></select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Campos a comparar -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <h3 class="font-semibold text-slate-800 dark:text-white text-sm flex items-center space-x-2">
+                            <i class="fa-solid fa-code-compare text-amber-500"></i>
+                            <span>Campos a conferir nas notas que batem</span>
+                        </h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Ex.: Valor Total, ICMS, IPI, PIS, COFINS, Data de Emissão… Cada linha liga uma coluna do SAP à coluna equivalente do fornecedor.</p>
+                    </div>
+                    <div class="flex gap-2 shrink-0">
+                        <button id="btn-suggest-pairs" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                            <i class="fa-solid fa-wand-magic-sparkles text-indigo-500"></i> Sugerir pelos nomes
+                        </button>
+                        <button id="btn-add-pair" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5">
+                            <i class="fa-solid fa-plus"></i> Adicionar campo
+                        </button>
+                    </div>
+                </div>
+
+                <div class="hidden sm:grid grid-cols-12 gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                    <span class="col-span-4">Coluna no SAP</span>
+                    <span class="col-span-1"></span>
+                    <span class="col-span-4">Coluna no Fornecedor</span>
+                    <span class="col-span-2">Comparar como</span>
+                    <span class="col-span-1"></span>
+                </div>
+                <div id="pairs-container" class="space-y-2"></div>
+            </div>
+
+            <!-- Tolerância -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <h3 class="font-semibold text-slate-800 dark:text-white text-sm flex items-center space-x-2">
+                    <i class="fa-solid fa-sliders text-amber-500"></i><span>Regras de Tolerância e Normalização</span>
+                </h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Tolerância para campos numéricos</label>
+                        <div class="relative">
+                            <input type="number" id="tolerance-value" value="0.01" step="0.01" min="0" class="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white">
+                            <span class="absolute right-3 top-2 text-xs text-slate-400">R$</span>
+                        </div>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Diferenças menores ou iguais a esta são consideradas OK (arredondamento). Use 0 para exigir igualdade exata.</p>
+                    </div>
+                    <div class="text-xs text-slate-600 dark:text-slate-300 space-y-1.5 mt-1">
+                        <p class="font-medium text-slate-700 dark:text-slate-300">Normalização automática</p>
+                        <p><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i> CNPJ sem pontuação e com zeros à esquerda recuperados</p>
+                        <p><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i> Número da nota sem zeros à esquerda</p>
+                        <p><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i> Valores "1.234,56", "1234.56" e "100,00-" (SAP) entendidos como número</p>
+                        <p><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i> Texto comparado sem diferenciar maiúsculas, acentos e espaços</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button id="btn-run-reconciliation" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-8 py-3 rounded-xl transition-all shadow-md flex items-center space-x-2">
+                    <i class="fa-solid fa-bolt text-amber-300"></i><span>Executar Conciliação</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- STEP 3: Dashboard -->
+        <section id="step-dashboard" class="hidden space-y-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                        <i class="fa-solid fa-chart-pie text-indigo-600 dark:text-indigo-400"></i><span>Resultado da Conciliação</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5" id="summary-meta-info"></p>
+                </div>
+                <div class="flex items-center flex-wrap gap-2 w-full sm:w-auto">
+                    <button id="btn-back-config" class="px-4 py-2 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium flex items-center space-x-1.5">
+                        <i class="fa-solid fa-sliders"></i><span>Ajustar campos</span>
+                    </button>
+                    <button id="btn-new-reconciliation" class="px-4 py-2 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium flex items-center space-x-1.5">
+                        <i class="fa-solid fa-rotate-left"></i><span>Nova Conciliação</span>
+                    </button>
+                    <button id="btn-export-report" class="flex-1 sm:flex-none px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium shadow-sm flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-file-excel"></i><span>Exportar Excel</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- KPIs -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Notas que batem</p>
+                        <h3 class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1" id="kpi-matched">0</h3>
+                        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Estão nas duas planilhas</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl"><i class="fa-solid fa-link"></i></div>
+                </div>
+                <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sem erro</p>
+                        <h3 class="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1" id="kpi-ok">0</h3>
+                        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5"><span id="kpi-ok-pct">0%</span> das que batem</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl"><i class="fa-solid fa-circle-check"></i></div>
+                </div>
+                <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Com erro</p>
+                        <h3 class="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1" id="kpi-divergent">0</h3>
+                        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5"><span id="kpi-field-errors">0</span> campos divergentes</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                </div>
+                <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Desconsideradas</p>
+                        <h3 class="text-2xl font-bold text-slate-500 dark:text-slate-400 mt-1" id="kpi-ignored">0</h3>
+                        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5"><span id="kpi-only-sap">0</span> só SAP · <span id="kpi-only-sup">0</span> só fornec.</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xl"><i class="fa-solid fa-ban"></i></div>
+                </div>
+                <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Diferença numérica</p>
+                        <h3 class="text-lg font-bold text-rose-600 dark:text-rose-400 mt-1" id="kpi-total-diff">R$ 0,00</h3>
+                        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Soma absoluta nas que batem</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-xl"><i class="fa-solid fa-wallet"></i></div>
+                </div>
+            </div>
+
+            <!-- Erros por campo -->
+            <div id="field-errors-panel" class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+                <h3 class="text-sm font-semibold text-slate-800 dark:text-white mb-3 flex items-center gap-2"><i class="fa-solid fa-list-check text-amber-500"></i> Erros por campo</h3>
+                <div id="field-errors-list" class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2"></div>
+            </div>
+
+            <!-- Tabela -->
+            <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div class="flex items-center space-x-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto overflow-x-auto">
+                        <button data-filter="matched" class="filter-tab whitespace-nowrap">Que batem (<span id="count-matched">0</span>)</button>
+                        <button data-filter="ok" class="filter-tab whitespace-nowrap">Sem erro (<span id="count-ok">0</span>)</button>
+                        <button data-filter="divergent" class="filter-tab whitespace-nowrap">Com erro (<span id="count-divergent">0</span>)</button>
+                        <button data-filter="ignored" class="filter-tab whitespace-nowrap">Desconsideradas (<span id="count-ignored">0</span>)</button>
+                        <button data-filter="all" class="filter-tab whitespace-nowrap">Todas (<span id="count-all">0</span>)</button>
+                    </div>
+                    <div class="w-full md:w-72 relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></span>
+                        <input type="text" id="table-search" placeholder="Buscar por CNPJ, nota ou campo..." class="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white">
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold uppercase tracking-wider">
+                                <th class="py-3 px-4">Status</th>
+                                <th class="py-3 px-4">CNPJ</th>
+                                <th class="py-3 px-4">Nota Fiscal</th>
+                                <th class="py-3 px-4">Conferência</th>
+                                <th class="py-3 px-4">Campos com erro</th>
+                                <th class="py-3 px-4 text-center">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body" class="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300"></tbody>
+                    </table>
+                </div>
+
+                <div id="table-empty-state" class="hidden py-16 text-center">
+                    <i class="fa-solid fa-filter-circle-xmark text-4xl text-slate-300 dark:text-slate-700 mb-2"></i>
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-300">Nenhum registro encontrado para este filtro.</p>
+                    <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Ajuste a busca ou selecione outra aba.</p>
+                </div>
+
+                <div class="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
+                    <span id="pagination-info"></span>
+                    <div class="flex space-x-2">
+                        <button id="btn-prev-page" class="px-3 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed">Anterior</button>
+                        <button id="btn-next-page" class="px-3 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed">Próxima</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal -->
+    <div id="detail-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 hidden">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-w-3xl w-full mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                <h3 class="font-bold text-slate-900 dark:text-white text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-info text-indigo-600 dark:text-indigo-400"></i><span>Detalhes da Nota</span>
+                </h3>
+                <button id="modal-close" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div id="modal-body" class="p-6 space-y-4 text-xs overflow-y-auto"></div>
+            <div class="px-6 py-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                <button id="modal-btn-close" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-4 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 dark:text-slate-400">
+            ConciliaSAP &bull; Conciliação de Notas Fiscais SAP vs Fornecedor &bull; Processamento 100% local no navegador
+        </div>
+    </footer>
+
+<script>
+// =====================================================================
+// Utilidades gerais
+// =====================================================================
+const $ = id => document.getElementById(id);
+const BRL = n => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function stripAccents(s) { return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function normHeader(h) { return stripAccents(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function isEmpty(v) { return v === null || v === undefined || (v instanceof Date ? isNaN(v) : String(v).trim() === ''); }
+
+// ---------- Tema ----------
+function setTheme(isDark) {
+    document.documentElement.classList.toggle('dark', isDark);
+    $('theme-icon').className = isDark ? 'fa-solid fa-sun text-sm' : 'fa-solid fa-moon text-sm';
+    try { localStorage.setItem('conciliasap_theme', isDark ? 'dark' : 'light'); } catch (e) {}
+}
+(function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem('conciliasap_theme'); } catch (e) {}
+    setTheme(saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches));
+})();
+$('theme-toggle').addEventListener('click', () => setTheme(!document.documentElement.classList.contains('dark')));
+
+// ---------- Toast ----------
+function showToast(message, type = 'info') {
+    const styles = {
+        info:    ['bg-slate-800 dark:bg-slate-700', 'fa-circle-info text-blue-400'],
+        success: ['bg-emerald-800', 'fa-circle-check text-emerald-300'],
+        error:   ['bg-rose-800', 'fa-triangle-exclamation text-rose-300'],
+        warning: ['bg-amber-800', 'fa-triangle-exclamation text-amber-300'],
+    }[type] || [];
+    const toast = document.createElement('div');
+    toast.className = `${styles[0]} text-white px-4 py-3 rounded-xl shadow-lg flex items-center space-x-3 text-xs font-medium transition-all translate-y-2 opacity-0 duration-300 max-w-sm`;
+    toast.innerHTML = `<i class="fa-solid ${styles[1]} text-sm"></i><span>${esc(message)}</span>`;
+    $('toast-container').appendChild(toast);
+    setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+    setTimeout(() => { toast.classList.add('translate-y-2', 'opacity-0'); setTimeout(() => toast.remove(), 300); }, 4500);
+}
+
+// =====================================================================
+// Normalização de chave (CNPJ + NF) e de valores
+// =====================================================================
+function normalizeCNPJ(val) {
+    let s = String(val ?? '').replace(/\D/g, '');
+    // Excel costuma "comer" os zeros à esquerda de CNPJ guardado como número
+    if (s.length > 11 && s.length < 14) s = s.padStart(14, '0');
+    return s;
+}
+function formatCNPJ(s) {
+    if (!s) return 'N/A';
+    return s.length === 14 ? s.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : s;
+}
+function normalizeNFe(val) {
+    let s = String(val ?? '').trim();
+    if (/^\d+(\.0+)?$/.test(s)) s = s.replace(/\.0+$/, '').replace(/^0+(?=\d)/, '');
+    return s.toUpperCase();
+}
+
+// Converte "1.234,56", "1234.56", "R$ 10,00", "100,00-" (SAP), "(50,00)" em número. Retorna null se não for número.
+function toNumber(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    if (v instanceof Date || isEmpty(v)) return null;
+    let s = String(v).trim().replace(/R\$/gi, '').replace(/\s/g, '');
+    let neg = false;
+    if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+    if (s.endsWith('-')) { neg = true; s = s.slice(0, -1); }
+    if (s.startsWith('-')) { neg = true; s = s.slice(1); }
+    else if (s.startsWith('+')) { s = s.slice(1); }
+    if (!/^[\d.,]+$/.test(s) || !/\d/.test(s)) return null;
+    const lc = s.lastIndexOf(','), ld = s.lastIndexOf('.');
+    if (lc > -1 && ld > -1) {
+        s = lc > ld ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+    } else if (lc > -1) {
+        s = s.split(',').length > 2 ? s.replace(/,/g, '') : s.replace(',', '.');
+    } else if (ld > -1 && s.split('.').length > 2) {
+        s = s.replace(/\./g, '');
+    }
+    const n = parseFloat(s);
+    if (isNaN(n)) return null;
+    return neg ? -n : n;
+}
+
+// Converte Date ou texto (dd/mm/aaaa, dd.mm.aaaa, aaaa-mm-dd) em "aaaa-mm-dd". Retorna null se não for data.
+function toDateKey(v) {
+    const pad = n => String(n).padStart(2, '0');
+    if (v instanceof Date) {
+        if (isNaN(v)) return null;
+        const d = new Date(v.getTime() + 60000); // corrige imprecisão de segundos do Excel
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+    if (typeof v !== 'string') return null;
+    const s = v.trim();
+    let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(\s|T|$)/);
+    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(\s|T|$)/);
+    if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+    return null;
+}
+function dateKeyToBR(k) { const [y, m, d] = k.split('-'); return `${d}/${m}/${y}`; }
+
+function displayValue(v) {
+    if (isEmpty(v)) return '';
+    if (v instanceof Date) return dateKeyToBR(toDateKey(v));
+    if (typeof v === 'number') {
+        return Number.isInteger(v) ? String(v) : v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    }
+    return String(v);
+}
+function normText(v) { return stripAccents(displayValue(v)).trim().replace(/\s+/g, ' ').toUpperCase(); }
+
+/**
+ * Compara um campo do SAP com o do fornecedor.
+ * type: 'auto' | 'number' | 'date' | 'text'
+ */
+function compareField(a, b, type, tol) {
+    const ea = isEmpty(a), eb = isEmpty(b);
+    if (ea && eb) return { ok: true, kind: 'vazio', diff: null };
+
+    if (type === 'auto' || type === 'date') {
+        const da = toDateKey(a), db = toDateKey(b);
+        if (da && db) return { ok: da === db, kind: 'data', diff: null };
+        if (type === 'date') return { ok: false, kind: 'data', diff: null };
+    }
+
+    if (type === 'auto' || type === 'number') {
+        const na = toNumber(a), nb = toNumber(b);
+        const aNum = na !== null || ea, bNum = nb !== null || eb;
+        if (aNum && bNum) {
+            // Campo vazio de um lado conta como 0 (ex.: IPI em branco no SAP vs 0,00 no fornecedor)
+            const diff = Math.round(((na ?? 0) - (nb ?? 0)) * 100) / 100;
+            return { ok: Math.abs(diff) <= tol + 1e-9, kind: 'numero', diff };
+        }
+        if (type === 'number') return { ok: false, kind: 'numero', diff: null };
+    }
+
+    return { ok: normText(a) === normText(b), kind: 'texto', diff: null };
+}
+
+// =====================================================================
+// Estado
+// =====================================================================
+const state = {
+    dataSAP: [], dataSup: [], headersSAP: [], headersSup: [],
+    fileNameSAP: '', fileNameSup: '',
+    pairs: [],                 // [{ sap, sup, type }]
+    config: null,              // config usada na última execução
+    results: [], filtered: [],
+    currentFilter: 'matched', searchQuery: '',
+    currentPage: 1, itemsPerPage: 15,
+    stats: null
+};
+
+// =====================================================================
+// Passo 1: Upload
+// =====================================================================
+const EMPTY_DROP = {
+    sap: 'Arraste a Planilha SAP aqui ou <span class="text-indigo-600 dark:text-indigo-400 underline">clique para selecionar</span>',
+    sup: 'Arraste a Planilha do Fornecedor aqui ou <span class="text-indigo-600 dark:text-indigo-400 underline">clique para selecionar</span>'
+};
+function resetDropUI(target) {
+    $(`drop-zone-${target}`).classList.remove('border-emerald-500', 'bg-emerald-50/20', 'dark:bg-emerald-950/20');
+    $(`file-${target}-info`).innerHTML = `
+        <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-400 dark:text-slate-500"></i>
+        <p class="text-sm font-medium text-slate-600 dark:text-slate-300">${EMPTY_DROP[target]}</p>
+        <p class="text-xs text-slate-400 dark:text-slate-500">Nenhum arquivo selecionado</p>`;
+}
+function updateFileDropUI(target, fileName, rowCount) {
+    $(`drop-zone-${target}`).classList.add('border-emerald-500', 'bg-emerald-50/20', 'dark:bg-emerald-950/20');
+    $(`file-${target}-info`).innerHTML = `
+        <i class="fa-solid fa-file-circle-check text-3xl text-emerald-600 dark:text-emerald-400"></i>
+        <p class="text-sm font-semibold text-slate-800 dark:text-white break-all">${esc(fileName)}</p>
+        <p class="text-xs text-emerald-600 dark:text-emerald-400 font-medium">${rowCount} linhas importadas</p>`;
+}
+resetDropUI('sap');
+resetDropUI('sup');
+
+function setHeaderStatus(color, text, pulse = false) {
+    $('header-status').innerHTML = `<span class="w-2 h-2 rounded-full ${color} ${pulse ? 'animate-pulse' : ''}"></span><span class="text-indigo-200 dark:text-slate-300">${esc(text)}</span>`;
+}
+
+function handleFile(file, isSAP) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+            const ws = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+            if (rows.length === 0) {
+                showToast(`A planilha ${isSAP ? 'SAP' : 'do Fornecedor'} está vazia ou sem cabeçalho.`, 'error');
+                return;
+            }
+            const headers = Object.keys(rows[0]);
+
+            if (isSAP) {
+                Object.assign(state, { dataSAP: rows, headersSAP: headers, fileNameSAP: file.name });
+            } else {
+                Object.assign(state, { dataSup: rows, headersSup: headers, fileNameSup: file.name });
+            }
+            state.pairs = []; // arquivos mudaram -> refazer mapeamento
+            updateFileDropUI(isSAP ? 'sap' : 'sup', file.name, rows.length);
+            checkFilesReady();
+        } catch (err) {
+            console.error(err);
+            showToast(`Erro ao ler ${file.name}. Verifique se é um Excel ou CSV válido.`, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function checkFilesReady() {
+    const ready = state.dataSAP.length > 0 && state.dataSup.length > 0;
+    $('btn-proceed-config').disabled = !ready;
+    if (ready) setHeaderStatus('bg-emerald-400', 'Arquivos prontos para configuração');
+}
+
+['sap', 'sup'].forEach(target => {
+    const dropZone = $(`drop-zone-${target}`);
+    $(`file-${target}`).addEventListener('change', e => {
+        if (e.target.files.length > 0) handleFile(e.target.files[0], target === 'sap');
+    });
+    ['dragenter', 'dragover'].forEach(ev => dropZone.addEventListener(ev, e => {
+        e.preventDefault();
+        dropZone.classList.add('border-indigo-600', 'bg-indigo-50/40', 'dark:bg-indigo-950/30');
+    }));
+    ['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, e => {
+        e.preventDefault();
+        dropZone.classList.remove('border-indigo-600', 'bg-indigo-50/40', 'dark:bg-indigo-950/30');
+    }));
+    dropZone.addEventListener('drop', e => {
+        if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0], target === 'sap');
+    });
+});
+
+function showStep(step) {
+    ['upload', 'config', 'dashboard'].forEach(s => $(`step-${s}`).classList.toggle('hidden', s !== step));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+$('btn-proceed-config').addEventListener('click', () => {
+    populateKeySelectors();
+    if (state.pairs.length === 0) suggestPairs(false);
+    renderPairs();
+    showStep('config');
+});
+$('btn-back-upload').addEventListener('click', () => showStep('upload'));
+$('btn-back-config').addEventListener('click', () => showStep('config'));
+
+$('btn-new-reconciliation').addEventListener('click', () => {
+    Object.assign(state, {
+        dataSAP: [], dataSup: [], headersSAP: [], headersSup: [], fileNameSAP: '', fileNameSup: '',
+        pairs: [], results: [], filtered: [], config: null, searchQuery: ''
+    });
+    $('file-sap').value = '';
+    $('file-sup').value = '';
+    $('table-search').value = '';
+    resetDropUI('sap');
+    resetDropUI('sup');
+    $('btn-proceed-config').disabled = true;
+    setHeaderStatus('bg-amber-400', 'Aguardando importação dos arquivos', true);
+    showStep('upload');
+});
+
+// =====================================================================
+// Passo 2: Mapeamento
+// =====================================================================
+function optionsHTML(headers, selected) {
+    return headers.map(h => `<option value="${esc(h)}" ${h === selected ? 'selected' : ''}>${esc(h)}</option>`).join('');
+}
+function bestHeader(headers, keywords) {
+    for (const kw of keywords) {
+        const k = normHeader(kw);
+        const exact = headers.find(h => normHeader(h) === k);
+        if (exact) return exact;
+    }
+    for (const kw of keywords) {
+        const k = normHeader(kw);
+        const partial = headers.find(h => normHeader(h).includes(k));
+        if (partial) return partial;
+    }
+    return headers[0];
+}
+const KW_CNPJ = ['cnpj', 'cnpj fornecedor', 'cnpj emitente', 'cpf/cnpj', 'emitente', 'fornecedor'];
+const KW_NF = ['nota fiscal', 'numero nota', 'numero nf', 'n nf', 'nfe', 'nf-e', 'nf', 'nota', 'numero documento', 'documento', 'doc'];
+
+function populateKeySelectors() {
+    const keep = id => $(id).value;
+    const sets = [
+        ['map-sap-cnpj', state.headersSAP, KW_CNPJ], ['map-sap-nfe', state.headersSAP, KW_NF],
+        ['map-sup-cnpj', state.headersSup, KW_CNPJ], ['map-sup-nfe', state.headersSup, KW_NF],
+    ];
+    sets.forEach(([id, headers, kws]) => {
+        const current = keep(id);
+        const sel = headers.includes(current) ? current : bestHeader(headers, kws);
+        $(id).innerHTML = optionsHTML(headers, sel);
+    });
+}
+
+function keyColumns() {
+    return {
+        sapCnpj: $('map-sap-cnpj').value, sapNf: $('map-sap-nfe').value,
+        supCnpj: $('map-sup-cnpj').value, supNf: $('map-sup-nfe').value,
+    };
+}
+
+function suggestPairs(notify = true) {
+    const k = keyColumns();
+    const skip = h => /^__EMPTY/.test(h);
+    const supByNorm = new Map();
+    state.headersSup.forEach(h => {
+        if (h !== k.supCnpj && h !== k.supNf && !skip(h)) supByNorm.set(normHeader(h), h);
+    });
+    state.pairs = state.headersSAP
+        .filter(h => h !== k.sapCnpj && h !== k.sapNf && !skip(h))
+        .map(h => { const s = supByNorm.get(normHeader(h)); return s ? { sap: h, sup: s, type: 'auto' } : null; })
+        .filter(Boolean);
+    if (notify) {
+        showToast(state.pairs.length
+            ? `${state.pairs.length} campo(s) com o mesmo nome encontrados nas duas planilhas.`
+            : 'Nenhuma coluna com nome igual. Adicione os campos manualmente.', state.pairs.length ? 'success' : 'warning');
+    }
+}
+
+const TYPE_OPTIONS = [['auto', 'Automático'], ['number', 'Número'], ['date', 'Data'], ['text', 'Texto']];
+
+function renderPairs() {
+    const c = $('pairs-container');
+    if (state.pairs.length === 0) {
+        c.innerHTML = `<div class="text-center py-6 text-xs text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
+            Nenhum campo para conferir. Clique em <strong>Adicionar campo</strong> para ligar uma coluna do SAP à do fornecedor (ex.: ICMS ↔ Valor ICMS).
+            <br>Sem campos, a conciliação só verifica se a nota existe nas duas planilhas.</div>`;
+        return;
+    }
+    const selCls = 'w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white';
+    c.innerHTML = state.pairs.map((p, i) => `
+        <div class="grid grid-cols-12 gap-2 items-center bg-white/60 dark:bg-slate-900/40 sm:bg-transparent p-2 sm:p-0 rounded-lg">
+            <select data-i="${i}" data-f="sap" class="${selCls} col-span-12 sm:col-span-4">${optionsHTML(state.headersSAP, p.sap)}</select>
+            <span class="hidden sm:flex col-span-1 justify-center text-slate-400"><i class="fa-solid fa-arrows-left-right"></i></span>
+            <select data-i="${i}" data-f="sup" class="${selCls} col-span-12 sm:col-span-4">${optionsHTML(state.headersSup, p.sup)}</select>
+            <select data-i="${i}" data-f="type" class="${selCls} col-span-10 sm:col-span-2">${TYPE_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === p.type ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            <button data-remove="${i}" title="Remover campo" class="col-span-2 sm:col-span-1 h-8 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"><i class="fa-solid fa-trash-can"></i></button>
+        </div>`).join('');
+}
+
+$('pairs-container').addEventListener('change', e => {
+    const el = e.target;
+    if (el.dataset.i === undefined) return;
+    state.pairs[+el.dataset.i][el.dataset.f] = el.value;
+});
+$('pairs-container').addEventListener('click', e => {
+    const btn = e.target.closest('[data-remove]');
+    if (!btn) return;
+    state.pairs.splice(+btn.dataset.remove, 1);
+    renderPairs();
+});
+$('btn-add-pair').addEventListener('click', () => {
+    const k = keyColumns();
+    const used = new Set(state.pairs.map(p => p.sap));
+    const sap = state.headersSAP.find(h => h !== k.sapCnpj && h !== k.sapNf && !used.has(h)) || state.headersSAP[0];
+    const sup = state.headersSup.find(h => normHeader(h) === normHeader(sap)) || state.headersSup.find(h => h !== k.supCnpj && h !== k.supNf) || state.headersSup[0];
+    state.pairs.push({ sap, sup, type: 'auto' });
+    renderPairs();
+});
+$('btn-suggest-pairs').addEventListener('click', () => { suggestPairs(true); renderPairs(); });
+
+function pairLabel(p) {
+    return normHeader(p.sap) === normHeader(p.sup) ? p.sap : `${p.sap} ↔ ${p.sup}`;
+}
+
+// =====================================================================
+// Motor de conciliação
+// =====================================================================
+function buildIndex(rows, cnpjCol, nfCol) {
+    const map = new Map();
+    let blank = 0;
+    rows.forEach((row, i) => {
+        const cnpj = normalizeCNPJ(row[cnpjCol]);
+        const nf = normalizeNFe(row[nfCol]);
+        if (!cnpj && !nf) { blank++; return; } // linha sem chave (total, linha em branco...)
+        const key = `${cnpj}|${nf}`;
+        if (!map.has(key)) map.set(key, { cnpj, nf, rows: [] });
+        map.get(key).rows.push({ row, line: i + 2 }); // +2 = cabeçalho na linha 1
+    });
+    return { map, blank };
+}
+
+$('btn-run-reconciliation').addEventListener('click', runReconciliation);
+
+function runReconciliation() {
+    const k = keyColumns();
+    if (k.sapCnpj === k.sapNf || k.supCnpj === k.supNf) {
+        showToast('CNPJ e Número da Nota precisam ser colunas diferentes.', 'error');
+        return;
+    }
+    const tRaw = parseFloat($('tolerance-value').value);
+    const tol = isNaN(tRaw) || tRaw < 0 ? 0 : tRaw;
+    const pairs = state.pairs.map(p => ({ ...p, label: pairLabel(p) }));
+
+    const sapIdx = buildIndex(state.dataSAP, k.sapCnpj, k.sapNf);
+    const supIdx = buildIndex(state.dataSup, k.supCnpj, k.supNf);
+
+    const results = [];
+    const handled = new Set();
+
+    const pushUnmatched = (status, cnpj, nf, entry, note) => results.push({
+        status, cnpj, nf, checks: [], errors: 0,
+        rowSAP: status === 'only_sap' ? entry.row : null, lineSAP: status === 'only_sap' ? entry.line : null,
+        rowSup: status === 'only_sup' ? entry.row : null, lineSup: status === 'only_sup' ? entry.line : null,
+        note
+    });
+
+    const processKey = (key) => {
+        if (handled.has(key)) return;
+        handled.add(key);
+        const s = sapIdx.map.get(key), f = supIdx.map.get(key);
+        const sRows = s ? s.rows : [], fRows = f ? f.rows : [];
+        const { cnpj, nf } = s || f;
+        const dup = sRows.length > 1 || fRows.length > 1
+            ? `Chave repetida: ${sRows.length}x no SAP e ${fRows.length}x no fornecedor (pareadas pela ordem das linhas).` : '';
+        const n = Math.min(sRows.length, fRows.length);
+
+        for (let i = 0; i < n; i++) {
+            const a = sRows[i], b = fRows[i];
+            const checks = pairs.map(p => {
+                const r = compareField(a.row[p.sap], b.row[p.sup], p.type, tol);
+                return { label: p.label, sapCol: p.sap, supCol: p.sup, sapVal: a.row[p.sap], supVal: b.row[p.sup], ...r };
+            });
+            const errors = checks.filter(c => !c.ok).length;
+            results.push({
+                status: errors ? 'divergent' : 'ok', cnpj, nf, checks, errors,
+                rowSAP: a.row, lineSAP: a.line, rowSup: b.row, lineSup: b.line, note: dup
+            });
+        }
+        sRows.slice(n).forEach(a => pushUnmatched('only_sap', cnpj, nf, a, dup || 'Nota não encontrada na planilha do fornecedor.'));
+        fRows.slice(n).forEach(b => pushUnmatched('only_sup', cnpj, nf, b, dup || 'Nota não encontrada na planilha SAP.'));
+    };
+
+    sapIdx.map.forEach((_, key) => processKey(key));
+    supIdx.map.forEach((_, key) => processKey(key));
+
+    state.results = results;
+    state.config = { ...k, tol, pairs };
+    state.stats = { blankSAP: sapIdx.blank, blankSup: supIdx.blank };
+    state.currentFilter = 'matched';
+    state.searchQuery = '';
+    $('table-search').value = '';
+    setActiveTab('matched');
+
+    updateDashboardUI();
+    showStep('dashboard');
+    setHeaderStatus('bg-emerald-400', 'Conciliação concluída');
+    if (pairs.length === 0) showToast('Nenhum campo configurado: só foi verificado se a nota existe nas duas planilhas.', 'warning');
+    else showToast('Conciliação concluída!', 'success');
+}
+
+// =====================================================================
+// Passo 3: Dashboard
+// =====================================================================
+const isMatched = r => r.status === 'ok' || r.status === 'divergent';
+const isIgnored = r => r.status === 'only_sap' || r.status === 'only_sup';
+
+function updateDashboardUI() {
+    const R = state.results;
+    const matched = R.filter(isMatched);
+    const ok = R.filter(r => r.status === 'ok').length;
+    const div = R.filter(r => r.status === 'divergent').length;
+    const onlySap = R.filter(r => r.status === 'only_sap').length;
+    const onlySup = R.filter(r => r.status === 'only_sup').length;
+    const fieldErrors = matched.reduce((a, r) => a + r.errors, 0);
+    const numDiff = matched.reduce((a, r) => a + r.checks.reduce((x, c) => x + (c.diff !== null && !c.ok ? Math.abs(c.diff) : 0), 0), 0);
+
+    $('kpi-matched').innerText = matched.length.toLocaleString('pt-BR');
+    $('kpi-ok').innerText = ok.toLocaleString('pt-BR');
+    $('kpi-ok-pct').innerText = matched.length ? ((ok / matched.length) * 100).toFixed(1).replace('.', ',') + '%' : '0%';
+    $('kpi-divergent').innerText = div.toLocaleString('pt-BR');
+    $('kpi-field-errors').innerText = fieldErrors.toLocaleString('pt-BR');
+    $('kpi-ignored').innerText = (onlySap + onlySup).toLocaleString('pt-BR');
+    $('kpi-only-sap').innerText = onlySap;
+    $('kpi-only-sup').innerText = onlySup;
+    $('kpi-total-diff').innerText = BRL(numDiff);
+
+    $('count-matched').innerText = matched.length;
+    $('count-ok').innerText = ok;
+    $('count-divergent').innerText = div;
+    $('count-ignored').innerText = onlySap + onlySup;
+    $('count-all').innerText = R.length;
+
+    const blanks = state.stats.blankSAP + state.stats.blankSup;
+    $('summary-meta-info').innerText =
+        `${state.dataSAP.length} linhas no SAP (${state.fileNameSAP}) × ${state.dataSup.length} linhas no fornecedor (${state.fileNameSup}). ` +
+        `${state.config.pairs.length} campo(s) conferido(s) por nota.` + (blanks ? ` ${blanks} linha(s) sem CNPJ/nota ignoradas.` : '');
+
+    // Erros por campo
+    const panel = $('field-errors-panel');
+    if (state.config.pairs.length === 0 || matched.length === 0) {
+        panel.classList.add('hidden');
+    } else {
+        panel.classList.remove('hidden');
+        const counts = state.config.pairs.map((p, i) => ({ label: p.label, n: matched.filter(r => !r.checks[i].ok).length }));
+        $('field-errors-list').innerHTML = counts.map(c => {
+            const pct = (c.n / matched.length) * 100;
+            return `<div>
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="font-medium text-slate-700 dark:text-slate-300 truncate pr-2">${esc(c.label)}</span>
+                    <span class="${c.n ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-emerald-600 dark:text-emerald-400'} whitespace-nowrap">${c.n ? `${c.n} nota(s) com erro` : 'tudo certo'}</span>
+                </div>
+                <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                    <div class="h-full rounded-full ${c.n ? 'bg-amber-500' : 'bg-emerald-500'}" style="width:${c.n ? Math.max(pct, 2) : 100}%"></div>
+                </div></div>`;
+        }).join('');
+    }
+
+    applyFiltersAndSearch();
+}
+
+const TAB_ON = 'filter-tab px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm transition-all whitespace-nowrap';
+const TAB_OFF = 'filter-tab px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-all whitespace-nowrap';
+function setActiveTab(filter) {
+    document.querySelectorAll('.filter-tab').forEach(b => b.className = b.dataset.filter === filter ? TAB_ON : TAB_OFF);
+}
+setActiveTab('matched');
+
+document.querySelectorAll('.filter-tab').forEach(btn => btn.addEventListener('click', () => {
+    state.currentFilter = btn.dataset.filter;
+    setActiveTab(state.currentFilter);
+    applyFiltersAndSearch();
+}));
+$('table-search').addEventListener('input', e => { state.searchQuery = e.target.value; applyFiltersAndSearch(); });
+
+function applyFiltersAndSearch() {
+    const f = state.currentFilter;
+    const q = state.searchQuery.trim().toUpperCase();
+    const qDigits = q.replace(/\D/g, '');
+    const qText = stripAccents(q);
+    state.filtered = state.results.filter(r => {
+        const okFilter = f === 'all' || (f === 'matched' && isMatched(r)) || (f === 'ignored' && isIgnored(r)) || r.status === f;
+        if (!okFilter) return false;
+        if (!q) return true;
+        return (qDigits && r.cnpj.includes(qDigits)) || r.nf.includes(q) ||
+            r.checks.some(c => !c.ok && stripAccents(c.label).toUpperCase().includes(qText));
+    });
+    state.currentPage = 1;
+    renderTable();
+}
+
+const STATUS_BADGE = {
+    ok:        '<span class="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold whitespace-nowrap"><i class="fa-solid fa-check mr-1"></i>Sem erro</span>',
+    divergent: '<span class="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-semibold whitespace-nowrap"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Com erro</span>',
+    only_sap:  '<span class="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold whitespace-nowrap"><i class="fa-solid fa-ban mr-1"></i>Desconsiderada</span>',
+    only_sup:  '<span class="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold whitespace-nowrap"><i class="fa-solid fa-ban mr-1"></i>Desconsiderada</span>',
+};
+
+function renderTable() {
+    const tbody = $('results-table-body');
+    const items = state.filtered;
+    const per = state.itemsPerPage;
+    const totalPages = Math.max(1, Math.ceil(items.length / per));
+    state.currentPage = Math.min(Math.max(1, state.currentPage), totalPages);
+    const start = (state.currentPage - 1) * per;
+    const page = items.slice(start, start + per);
+
+    $('table-empty-state').classList.toggle('hidden', items.length > 0);
+    tbody.innerHTML = page.map((r, i) => {
+        let conf, errs;
+        if (isMatched(r)) {
+            const total = r.checks.length;
+            conf = total ? `<span class="font-medium">${total - r.errors}/${total}</span> campos OK` : '<span class="text-slate-400">Só existência</span>';
+            errs = r.errors
+                ? r.checks.filter(c => !c.ok).map(c => `<span class="inline-block px-2 py-0.5 m-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-[10px] font-medium">${esc(c.label)}</span>`).join('')
+                : '<span class="text-slate-400">—</span>';
+        } else {
+            conf = r.status === 'only_sap'
+                ? `<span class="text-slate-500">Só no SAP (linha ${r.lineSAP})</span>`
+                : `<span class="text-slate-500">Só no fornecedor (linha ${r.lineSup})</span>`;
+            errs = '<span class="text-slate-400">Não conferida</span>';
+        }
+        return `<tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${isIgnored(r) ? 'opacity-70' : ''}">
+            <td class="py-3 px-4">${STATUS_BADGE[r.status]}</td>
+            <td class="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">${esc(formatCNPJ(r.cnpj))}</td>
+            <td class="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">${esc(r.nf || 'N/A')}</td>
+            <td class="py-3 px-4 whitespace-nowrap">${conf}</td>
+            <td class="py-3 px-4 max-w-md">${errs}</td>
+            <td class="py-3 px-4 text-center">
+                <button onclick="openDetailModal(${start + i})" class="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-medium whitespace-nowrap">
+                    <i class="fa-solid fa-eye mr-1"></i> Detalhes
+                </button>
+            </td></tr>`;
+    }).join('');
+
+    $('pagination-info').innerText = `Mostrando ${items.length ? start + 1 : 0} a ${Math.min(start + per, items.length)} de ${items.length} registros`;
+    $('btn-prev-page').disabled = state.currentPage === 1;
+    $('btn-next-page').disabled = state.currentPage >= totalPages;
+}
+$('btn-prev-page').addEventListener('click', () => { state.currentPage--; renderTable(); });
+$('btn-next-page').addEventListener('click', () => { state.currentPage++; renderTable(); });
+
+// ---------- Modal ----------
+function rawRowHTML(row) {
+    return Object.entries(row).map(([k, v]) => `<div class="flex justify-between gap-3 py-1 border-b border-slate-100 dark:border-slate-800">
+        <span class="font-semibold text-slate-500">${esc(k)}</span><span class="text-slate-800 dark:text-slate-200 font-mono text-right break-all">${esc(displayValue(v))}</span></div>`).join('');
+}
+
+function openDetailModal(idx) {
+    const r = state.filtered[idx];
+    if (!r) return;
+    let html = `
+        <div class="p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl text-slate-700 dark:text-slate-300 flex flex-wrap gap-x-6 gap-y-1 items-center">
+            <span><strong>CNPJ:</strong> <span class="font-mono">${esc(formatCNPJ(r.cnpj))}</span></span>
+            <span><strong>Nota:</strong> <span class="font-mono">${esc(r.nf)}</span></span>
+            ${r.lineSAP ? `<span><strong>Linha SAP:</strong> ${r.lineSAP}</span>` : ''}
+            ${r.lineSup ? `<span><strong>Linha Fornecedor:</strong> ${r.lineSup}</span>` : ''}
+            <span class="ml-auto">${STATUS_BADGE[r.status]}</span>
+        </div>
+        ${r.note ? `<p class="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-lg"><i class="fa-solid fa-circle-info mr-1"></i>${esc(r.note)}</p>` : ''}`;
+
+    if (isMatched(r)) {
+        html += r.checks.length ? `
+        <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+            <table class="w-full text-left">
+                <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <tr><th class="py-2 px-3">Campo</th><th class="py-2 px-3 text-right">SAP</th><th class="py-2 px-3 text-right">Fornecedor</th><th class="py-2 px-3 text-right">Diferença</th><th class="py-2 px-3 text-center">Resultado</th></tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                ${r.checks.map(c => `<tr class="${c.ok ? '' : 'bg-rose-50/60 dark:bg-rose-950/30'}">
+                    <td class="py-2 px-3 font-medium">${esc(c.label)}</td>
+                    <td class="py-2 px-3 text-right font-mono">${esc(displayValue(c.sapVal)) || '<span class="text-slate-400">vazio</span>'}</td>
+                    <td class="py-2 px-3 text-right font-mono">${esc(displayValue(c.supVal)) || '<span class="text-slate-400">vazio</span>'}</td>
+                    <td class="py-2 px-3 text-right font-mono">${c.diff !== null && c.diff !== 0 ? esc(c.diff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })) : '—'}</td>
+                    <td class="py-2 px-3 text-center">${c.ok ? '<span class="text-emerald-600 dark:text-emerald-400 font-semibold"><i class="fa-solid fa-check"></i> OK</span>' : '<span class="text-rose-600 dark:text-rose-400 font-semibold"><i class="fa-solid fa-xmark"></i> Erro</span>'}</td>
+                </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>` : '<p class="text-slate-500">Nenhum campo configurado para conferência.</p>';
+        html += `
+        <details class="group">
+            <summary class="cursor-pointer text-indigo-600 dark:text-indigo-400 font-medium select-none">Ver linhas completas das duas planilhas</summary>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 max-h-64 overflow-y-auto">
+                    <h4 class="font-bold text-indigo-600 dark:text-indigo-400 mb-2">SAP</h4>${rawRowHTML(r.rowSAP)}</div>
+                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 max-h-64 overflow-y-auto">
+                    <h4 class="font-bold text-emerald-600 dark:text-emerald-400 mb-2">Fornecedor</h4>${rawRowHTML(r.rowSup)}</div>
+            </div>
+        </details>`;
+    } else {
+        const row = r.rowSAP || r.rowSup;
+        html += `<p class="text-slate-600 dark:text-slate-300">Esta nota existe apenas ${r.status === 'only_sap' ? 'no <strong>SAP</strong>' : 'na planilha do <strong>fornecedor</strong>'}. Por isso ela foi <strong>desconsiderada</strong> na conferência e não entra no relatório Excel.</p>
+        <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 max-h-72 overflow-y-auto">
+            <h4 class="font-bold ${r.rowSAP ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'} mb-2">${r.rowSAP ? 'Linha no SAP' : 'Linha no Fornecedor'}</h4>${rawRowHTML(row)}</div>`;
+    }
+    $('modal-body').innerHTML = html;
+    $('detail-modal').classList.remove('hidden');
+}
+const closeModal = () => $('detail-modal').classList.add('hidden');
+$('modal-close').addEventListener('click', closeModal);
+$('modal-btn-close').addEventListener('click', closeModal);
+$('detail-modal').addEventListener('click', e => { if (e.target.id === 'detail-modal') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// =====================================================================
+// Exportação Excel (somente notas que batem nas duas planilhas)
+// =====================================================================
+function exportCell(v) {
+    if (isEmpty(v)) return '';
+    if (v instanceof Date) return dateKeyToBR(toDateKey(v));
+    const n = toNumber(v);
+    if (n !== null && !/^0\d/.test(String(v).trim())) return n; // mantém códigos tipo "0012" como texto
+    return String(v);
+}
+function autoWidth(aoa) {
+    const cols = [];
+    aoa.forEach(row => row.forEach((v, i) => { cols[i] = Math.min(Math.max(cols[i] || 8, String(v ?? '').length + 2), 50); }));
+    return cols.map(wch => ({ wch }));
+}
+function sheetFrom(aoa) {
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = autoWidth(aoa);
+    if (aoa.length > 1) ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: aoa[0].length - 1 } }) };
+    return ws;
+}
+
+$('btn-export-report').addEventListener('click', () => {
+    const matched = state.results.filter(isMatched);
+    if (matched.length === 0) {
+        showToast('Nenhuma nota bate entre as duas planilhas. Não há o que exportar.', 'error');
+        return;
+    }
+    const pairs = state.config.pairs;
+
+    // Aba 1: uma linha por nota que bate
+    const head = ['CNPJ', 'Nota Fiscal', 'Resultado', 'Qtd. Erros', 'Campos com Erro', 'Linha SAP', 'Linha Fornecedor'];
+    pairs.forEach(p => head.push(`${p.label} (SAP)`, `${p.label} (Fornecedor)`, `${p.label} - Status`));
+    const main = [head];
+    matched.forEach(r => {
+        const line = [formatCNPJ(r.cnpj), r.nf, r.errors ? 'COM ERRO' : 'OK', r.errors,
+            r.checks.filter(c => !c.ok).map(c => c.label).join(', '), r.lineSAP, r.lineSup];
+        r.checks.forEach(c => line.push(exportCell(c.sapVal), exportCell(c.supVal), c.ok ? 'OK' : 'ERRO'));
+        main.push(line);
+    });
+
+    // Aba 2: uma linha por campo divergente
+    const det = [['CNPJ', 'Nota Fiscal', 'Campo', 'Valor SAP', 'Valor Fornecedor', 'Diferença (SAP - Fornecedor)']];
+    matched.forEach(r => r.checks.filter(c => !c.ok).forEach(c =>
+        det.push([formatCNPJ(r.cnpj), r.nf, c.label, exportCell(c.sapVal), exportCell(c.supVal), c.diff ?? ''])));
+
+    // Aba 3: resumo
+    const ok = matched.filter(r => r.status === 'ok').length;
+    const ignored = state.results.filter(isIgnored);
+    const resumo = [
+        ['Item', 'Valor'],
+        ['Arquivo SAP', state.fileNameSAP],
+        ['Arquivo Fornecedor', state.fileNameSup],
+        ['Data da conciliação', new Date().toLocaleString('pt-BR')],
+        ['Chave usada', 'CNPJ + Número da Nota Fiscal'],
+        ['Campos conferidos', pairs.map(p => p.label).join(', ') || '(nenhum)'],
+        ['Tolerância numérica', state.config.tol],
+        ['Notas que batem nas duas planilhas', matched.length],
+        ['Notas sem erro', ok],
+        ['Notas com erro', matched.length - ok],
+        ['Notas desconsideradas (só em uma planilha, fora do relatório)', ignored.length],
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheetFrom(main), 'Conciliacao');
+    XLSX.utils.book_append_sheet(wb, sheetFrom(det.length > 1 ? det : [...det, ['', '', 'Nenhuma divergência encontrada', '', '', '']]), 'Divergencias');
+    XLSX.utils.book_append_sheet(wb, sheetFrom(resumo), 'Resumo');
+
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    XLSX.writeFile(wb, `Conciliacao_SAP_Fornecedor_${stamp}.xlsx`);
+    showToast(`Relatório exportado com ${matched.length} nota(s).`, 'success');
+});
+</script>
+</body>
+</html>
